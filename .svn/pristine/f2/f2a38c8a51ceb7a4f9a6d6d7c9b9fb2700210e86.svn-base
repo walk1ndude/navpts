@@ -1,0 +1,305 @@
+#include "ardrone.h"
+
+const int ArDrone::smap[9] = {  Drone::Unknown,
+                              Drone::Inited,
+                              Drone::Landed,
+                              Drone::Flying,
+                              Drone::Hovering,
+                              Drone::Unknown,
+                              Drone::TakingOff,
+                              Drone::Flying,
+                              Drone::Landing };
+
+ArDrone::ArDrone(const string & name)
+    : it(handle)
+{
+    _name = name;
+
+    
+    
+    // video to navdata delay = 70 ms
+    Navdata::Angle::varAccelerationError_yaw = CV_PI*2 * CV_PI*2;
+    Navdata::Angle::varSpeedError_rp = CV_PI*2 * CV_PI*2 * 16;
+    Navdata::Velocity::varAccelerationError_xy = 8*8;
+    Navdata::Height::varAccelerationError_z = 1*1;
+
+    s_camera_front = it.subscribe("ardrone/front/image_raw", 1, &ArDrone::_onImageFront, this);
+    s_camera_bottom = it.subscribe("ardrone/bottom/image_raw", 1, &ArDrone::_onImageBottom, this);
+    s_navdata = handle.subscribe("ardrone/navdata", 1, &ArDrone::_onNavdata, this);
+
+#ifdef _BAGPLAY
+    s_vel2 = handle.subscribe("cmd_vel_2", 1, &ArDrone::_onCmdVel, this);
+#endif
+#ifdef _BAGREC
+    p_vel2 = handle.advertise<geometry_msgs::TwistStamped>("cmd_vel_2", 1);
+#endif
+
+    p_vel = handle.advertise<geometry_msgs::Twist>("cmd_vel", 1);
+    p_takeoff = handle.advertise<std_msgs::Empty>("ardrone/takeoff", 1);
+    p_land = handle.advertise<std_msgs::Empty>("ardrone/land", 1);
+    p_reset = handle.advertise<std_msgs::Empty>("ardrone/reset", 1);
+    srv_flattrim = handle.serviceClient<std_srvs::Empty>("ardrone/flattrim");
+    srv_togglecamera = handle.serviceClient<std_srvs::Empty>("ardrone/togglecam");
+}
+
+// function implementations
+
+double ArDrone::getTimestamp() const
+{
+    return ros::Time::now().toSec();
+}
+
+double ArDrone::battery()
+{
+    return batteryPercent;
+}
+
+bool ArDrone::hover()
+{
+    cmdvel(VelocityControl());
+}
+
+bool ArDrone::reset()
+{
+    dbgStream() << "Publish RESET";
+    p_reset.publish(std_msgs::Empty());
+    return true;
+}
+
+bool ArDrone::flattrim()
+{
+    dbgStream() << "Call FLATTRIM";
+    std_srvs::Empty e_msg;
+    srv_flattrim.call(e_msg);
+    return true;
+}
+
+bool ArDrone::takeoff()
+{
+    dbgStream() << "Publish TAKEOFF";
+    p_takeoff.publish(std_msgs::Empty());
+    return true;
+}
+
+bool ArDrone::land()
+{
+    dbgStream() << "Publish LAND";
+    p_land.publish(std_msgs::Empty());
+    flattrim();
+    return true;
+}
+
+bool ArDrone::cmdvel(const VelocityControl &cmd_vel)
+{
+    if (controllable())
+    {
+        //debugMsg("Publish CMDVEL");
+
+        geometry_msgs::Twist twist;
+        twist.linear.x = cmd_vel.linear.x;
+        twist.linear.y = cmd_vel.linear.y;
+        twist.linear.z = cmd_vel.linear.z;
+        twist.angular.x = cmd_vel.angular.x;
+        twist.angular.y = cmd_vel.angular.y;
+        twist.angular.z = cmd_vel.angular.z;
+
+        p_vel.publish(twist);
+        double ts = ros::Time::now().toSec() + 0.1; // delay control (assumed 100 ms)
+
+#ifndef _BAGPLAY
+        VelocityControl * cv = new VelocityControl(cmd_vel);
+        cv->ts = ts; //cmd_vel.header.stamp.toSec();
+        pushEvent(ControlEvent, cv);
+#endif
+
+#ifdef _BAGREC
+        geometry_msgs::TwistStamped twist2;
+        twist2.twist = twist;
+        twist2.header.stamp.fromSec(ts);
+        p_vel2.publish(twist2);
+#endif
+        return true;
+    }
+    else
+    {
+        //dbgStream() << "Skip CMDVEL (drone is uncontrollable)" << endl;
+        return false;
+    }
+}
+
+// self functionality
+
+#ifdef _BAGPLAY
+void ArDrone::_onCmdVel(const geometry_msgs::TwistStamped &cmd_vel)
+{
+    VelocityControl * cv = new VelocityControl(cmd_vel.header.stamp.toSec());
+    cv->linear.x = cmd_vel.twist.linear.x;
+    cv->linear.y = cmd_vel.twist.linear.y;
+    cv->linear.z = cmd_vel.twist.linear.z;
+    cv->angular.x = cmd_vel.twist.angular.x;
+    cv->angular.y = cmd_vel.twist.angular.y;
+    cv->angular.z = cmd_vel.twist.angular.z;
+    pushEvent(ControlEvent, cv);
+}
+#endif
+
+void ArDrone::_onNavdata(const ardrone_autonomy::Navdata & navdata)
+{    
+    double ts = navdata.header.stamp.toSec() - 0.02; // 20 ms due to ros
+    double dt = ts - last_ts;
+
+    // init
+    if (lastState == -1)
+    {
+        yaw0 = navdata.rotZ * grad;
+        last_yaw = yaw0;
+        last_ts = ts;
+    }
+
+    // yaw fuck'n jump
+    double roll = keepAngle(navdata.rotX * grad, last_roll);
+    double pitch = keepAngle(navdata.rotY * grad, last_pitch);
+    double yaw = keepAngle(navdata.rotZ * grad, last_yaw);
+    if (abs(yaw - last_yaw) / (dt + 1e-10) > CV_PI*6)
+    {
+        dbgStream() << "Yaw jumps by " << (yaw-last_yaw)/grad / dt << " deg/sec - fused";
+        yaw0 += yaw - last_yaw /*+ pose(ts).yaw[1]*dt*/;
+        //yaw0 = atan2(sin(yaw0), cos(yaw0));
+    }
+
+    Navdata::Angle * a = new Navdata::Angle(ts - 0); // delay 0 ms
+    a->rpy[0] = roll;
+    a->rpy[1] = pitch;
+    a->rpy[2] = yaw - yaw0;
+    a->var[0] = a->var[1] = a->var[2] = 1*1 * grad*grad; // varPoseObservation_rp_IMU
+    pushEvent(AngleEvent, a);
+
+    if (navdata.altd != last_altd || navdata_seq - last_altd_seq >= 8)
+    {
+        Navdata::Height * h = new Navdata::Height(ts - 0.04); // delay 40 ms
+        h->z = navdata.altd * 0.001;
+        h->var = 0.1*0.1; // varPoseObservation_z_IMU
+        pushEvent(HeightEvent, h);
+        //dbgStream() << "Z: " << pose(ts).z[0] << " (" << h->z << ")" << endl;
+
+        last_altd = navdata.altd;
+        last_altd_seq = navdata_seq;
+    }
+
+    if (navdata.altd > 150 || navdata.altd == 0) // fuck
+    {
+        Navdata::Velocity * v = new Navdata::Velocity(ts - 0.04); // delay 40 ms
+        v->local = true;
+        v->dir.x = navdata.vx * 0.001;
+        v->dir.y = navdata.vy * 0.001;
+        v->var.x = v->var.y = 1*1; // varSpeedObservation_xy (2x2)
+        pushEvent(VelocityEvent, v);
+    }
+
+    batteryPercent = navdata.batteryPercent * 05.01;
+
+    if (navdata.state != lastState)
+    {
+        if (navdata.state < 9)
+        {
+            Navdata::State * s = new Navdata::State(ts);
+            s->state = smap[navdata.state];
+            pushEvent(StateEvent, s);
+            onState(s->state, ts);
+        }
+        lastState = navdata.state;
+    }
+
+    onNavdata(navdata);
+
+#ifdef _BAGPLAY
+    update(ts);
+#endif
+
+    last_yaw = yaw, last_pitch = pitch, last_roll = roll;
+    last_ts = ts;
+    navdata_seq++;
+}
+
+bool ArDrone::getCameraCalibration(Matx33d &M, Matx15d &D, Matx33d &R, Matx31d &T, int camIndex)
+{
+    double m_front[9] = {561.250148455135, 0, 350.836365445276, 0, 560.617650424123, 148.776057784124, 0, 0, 1};
+    double d_front[5] = {-0.51481502588663, 0.268246429648365, 0.0011766895771507, 0.00232949927172951, 0};
+    double r_front[3] = {0, CV_PI/2, 0}; // rodrigues
+    double t_front[3] = {0.2, 0, 0.025};
+
+    double m_bottom[9] = {700.490828918144, 0, 319.508832099787, 0, 701.654116650887, 218.740253550967, 0, 0, 1};
+    double d_bottom[5] = {0.0182389759532889, 0.0520276742502367, 0.00651075732801101, 0.000183496184521575, 0};
+    double r_bottom[3] = {0, CV_PI, 0}; // rodrigues
+    double t_bottom[3] = {0, 0, 0};
+
+    if (camIndex < 0)
+        camIndex = activeCamera();
+
+    Mat m(3, 3, CV_64F, camIndex == CAM_BOTTOM ? m_bottom : m_front);
+    Mat d(1, 5, CV_64F, camIndex == CAM_BOTTOM ? d_bottom : d_front);
+    Mat r(1, 3, CV_64F, camIndex == CAM_BOTTOM ? r_bottom : r_front);
+    Mat t(3, 1, CV_64F, camIndex == CAM_BOTTOM ? t_bottom : t_front);
+
+    m.copyTo(M);
+    d.copyTo(D);
+    Rodrigues(r, R);
+    t.copyTo(T);
+}
+
+void ArDrone::_onImageFront(const sensor_msgs::ImageConstPtr &msg)
+{
+    cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+    if (cv_ptr->header.stamp.toSec() - camSwitchTs >= CAM_SWITCH_DELAY)
+    {
+        if (camIndex == 0)
+        {
+            double ts = cv_ptr->header.stamp.toSec() - 0.09; // video delay
+            onImage(cv_ptr->image, ts, camIndex);
+        }
+        else
+        {
+            camSwitchTs = getTimestamp();
+            std_srvs::Empty e_msg;
+            srv_togglecamera.call(e_msg);
+        }
+    }
+}
+
+void ArDrone::_onImageBottom(const sensor_msgs::ImageConstPtr &msg)
+{
+    cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+    if (cv_ptr->header.stamp.toSec() - camSwitchTs >= CAM_SWITCH_DELAY)
+    {
+        if (camIndex == 1)
+        {
+            double ts = cv_ptr->header.stamp.toSec() - 0.09; // video delay
+            onImage(cv_ptr->image, ts, camIndex);
+        }
+        else
+        {
+            camSwitchTs = getTimestamp();
+            std_srvs::Empty e_msg;
+            srv_togglecamera.call(e_msg);
+        }
+    }
+}
+
+bool ArDrone::setActiveCamera(int index)
+{
+    assert(index == 0 || index == 1);
+    dbgStream() << "Set active camera to " << index << endl;
+    if (index != camIndex)
+    {
+        camSwitchTs = getTimestamp();
+        std_srvs::Empty e_msg;
+        srv_togglecamera.call(e_msg);
+        camIndex = index;
+    }
+    return true;
+}
+
+void ArDrone::update()
+{
+    APDrone::update();
+}

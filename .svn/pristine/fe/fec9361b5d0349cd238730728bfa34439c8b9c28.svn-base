@@ -1,0 +1,11 @@
+<launch>
+  <node pkg="ardrone_autonomy" type="ardrone_driver" name="ardrone_driver" args="_navdata_demo:=0 _loop_rate:=200" output="screen" />
+  <node pkg="navpts" type="navpts" name="navpts" respawn="true" output="screen">
+    <rosparam param="flightTask">[1, 4, 5]</rosparam>
+    <rosparam param="yawRotateHeight">0.45</rosparam>
+    <rosparam param="hitTargetDist">0.15</rosparam>
+    <rosparam param="nearToTargetDist">1.0</rosparam>
+    <rosparam param="targetHeightHeading">1.35</rosparam>
+    <rosparam param="timeBetweenAttempts">0.8</rosparam>
+  </node>
+</launch>
