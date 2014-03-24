@@ -20,8 +20,8 @@ set(SOURCES src/navpts.cpp
 )
 ## Declare a cpp executable
 add_executable(navpts ${SOURCES})
-add_dependencies(marker_detection_node ${PROJECT_NAME}_generate_messages_cpp)
-add_definitions(-std=c++11)
+add_dependencies(navpts ${PROJECT_NAME}_generate_messages_cpp)
+#add_definitions(-std=c++11)
 
 target_link_libraries(navpts ${catkin_LIBRARIES} ${OpenCV_LIBS} -laruco)
 
