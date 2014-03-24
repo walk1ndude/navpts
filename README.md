@@ -1,0 +1,4 @@
+navpts
+======
+
+navigation node
