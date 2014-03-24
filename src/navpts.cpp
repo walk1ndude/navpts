@@ -260,9 +260,9 @@ private:
 
     void showPlan(double ts)
     {
-      //  if (plan.empty())
+        if (plan.empty())
             plan = Mat(600, 600, CV_8UC3);
-/*
+
         Pose p = pose(ts);
 
         plan.setTo(Scalar::all(255));
@@ -302,7 +302,7 @@ private:
             circle(plan, tp, 5, Scalar(0,0,255), -1);
             putText(plan, "target", tp, FONT_HERSHEY_COMPLEX_SMALL, 1.0, Scalar(0,0,255));
         }
-*/
+
         imshow("plan", plan);
 	waitKey(1);
     }
@@ -458,14 +458,14 @@ public:
 
     void update()
     {
-        //ArDrone::update();
+        ArDrone::update();
 
         double ts = getTimestamp();
         //cout << pose(ts).rot()*Vec3d(0,0,1) << endl;
-       /* predictSpotsPositions(ts);
-        navigate(ts);*/
-       showPlan(ts);
-       // checkControl();
+        predictSpotsPositions(ts);
+      /*  navigate(ts);
+       showPlan(ts);*/
+        checkControl();
     }
 };
 
