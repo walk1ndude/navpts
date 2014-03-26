@@ -12,9 +12,9 @@ using namespace aruco;
 
 #define FIX_SPOT_UPDATES 3
 
-#define GET_MARKER_INFO_TOPIC "get_marker_info"
+#define GET_POSES_INFO_TOPIC "get_poses_info"
 
-#define SET_MARKER_INFO_TOPIC "set_marker_info"
+#define SET_POSES_INFO_TOPIC "set_poses_info"
 
 #define sqr(x) ((x)*(x))
 
@@ -84,9 +84,9 @@ private:
     
     ros::NodeHandle paramHandle;
 
-    ros::Publisher marker_pub;
+    ros::Publisher poses_pub;
     
-    ros::Subscriber marker_sub;
+    ros::Subscriber poses_sub;
     
     double yawRotateHeight;
     
@@ -165,26 +165,26 @@ private:
         }
     }
     
-    virtual void publishMarkers(std::vector<cv::Vec3d> & markers) {
+    virtual void publishPoses(const std::vector<cv::Vec3d> & poses) {
       geometry_msgs::PoseArray poseArray;
       
       geometry_msgs::Pose pose;
       
-      for (size_t i = 0; i != markers.size(); ++ i) {
-	pose.position.x = markers[i][0];
-	pose.position.y = markers[i][1];
-	pose.position.z = markers[i][2];
+      for (size_t i = 0; i != poses.size(); ++ i) {
+	pose.position.x = poses[i][0];
+	pose.position.y = poses[i][1];
+	pose.position.z = poses[i][2];
 	
 	poseArray.poses.push_back(pose);
       }
       
       poseArray.header.stamp = ros::Time::now();
       
-      marker_pub.publish<geometry_msgs::PoseArray>(poseArray);
+      poses_pub.publish<geometry_msgs::PoseArray>(poseArray);
     }
     
     
-    void updateMarkers(const geometry_msgs::PoseArray & marker_info) {
+    void updatePoses(const geometry_msgs::PoseArray & posesInfo) {
       
     }
 
@@ -217,7 +217,7 @@ private:
 
         imshow("bin", MDetector.getThresholdedImage());
 	
-	std::vector<cv::Vec3d>markers;
+	std::vector<cv::Vec3d>poses;
 
         // update spots' positions
         for (size_t i = 0; i < detectedMarkers.size(); i++) {
@@ -244,7 +244,7 @@ private:
                 // TODO: Angle event
             }
             
-            markers.push_back(spotPos);
+            poses.push_back(spotPos);
 
             // draw markers
             detectedMarkers[i].draw(demo, Scalar(0,0,255), 1);
@@ -252,7 +252,7 @@ private:
                 CvDrawingUtils::draw3dAxis(demo, marker, CP);
         }
         
-        publishMarkers(markers);
+        publishPoses(poses);
         
         namedWindow("demo", 0);
         imshow("demo", demo);
@@ -452,8 +452,8 @@ public:
     {
       getFlightTask();
       
-      marker_pub = handle.advertise<geometry_msgs::PoseArray>(GET_MARKER_INFO_TOPIC, 1);
-      marker_sub = handle.subscribe(SET_MARKER_INFO_TOPIC, 1, &NPDrone::updateMarkers, this);
+      poses_pub = handle.advertise<geometry_msgs::PoseArray>(GET_POSES_INFO_TOPIC, 1);
+      poses_sub = handle.subscribe(SET_POSES_INFO_TOPIC, 1, &NPDrone::updatePoses, this);
     }
 
     void update()

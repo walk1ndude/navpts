@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(navpts)
 
-set(CMAKE_BUILD_TYPE, Debug)
+set(CMAKE_BUILD_TYPE, RelWithDebugInfo)
 
-find_package(catkin REQUIRED COMPONENTS roscpp cv_bridge std_msgs image_transport ardrone_autonomy)
-find_package(OpenCV REQUIRED core imgproc highgui calib3d)
+find_package(catkin REQUIRED COMPONENTS roscpp cv_bridge std_msgs image_transport ardrone_autonomy rviz)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui calib3d)
 
 catkin_package(INCLUDE_DIRS include)
 

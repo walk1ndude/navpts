@@ -14,6 +14,8 @@
 #include <deque>
 #include "utils.h"
 
+#include <visualization_msgs/Marker.h>
+
 using namespace std;
 using namespace cv;
 
