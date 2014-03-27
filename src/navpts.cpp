@@ -7,6 +7,9 @@
 
 #include <geometry_msgs/PoseArray.h>
 
+#include <navpts/PoseArrayID.h>
+#include <navpts/PoseID.h>
+
 using namespace cv;
 using namespace aruco;
 
@@ -165,26 +168,7 @@ private:
         }
     }
     
-    virtual void publishPoses(const std::vector<cv::Vec3d> & poses) {
-      geometry_msgs::PoseArray poseArray;
-      
-      geometry_msgs::Pose pose;
-      
-      for (size_t i = 0; i != poses.size(); ++ i) {
-	pose.position.x = poses[i][0];
-	pose.position.y = poses[i][1];
-	pose.position.z = poses[i][2];
-	
-	poseArray.poses.push_back(pose);
-      }
-      
-      poseArray.header.stamp = ros::Time::now();
-      
-      poses_pub.publish<geometry_msgs::PoseArray>(poseArray);
-    }
-    
-    
-    void updatePoses(const geometry_msgs::PoseArray & posesInfo) {
+    void updatePoses(const navpts::PoseArrayID & posesInfo) {
       
     }
 
@@ -218,6 +202,13 @@ private:
         imshow("bin", MDetector.getThresholdedImage());
 	
 	std::vector<cv::Vec3d>poses;
+	
+	navpts::PoseArrayID posesInfo;
+	navpts::PoseID poseInfo;
+	
+	ros::Time timeStamp = ros::Time::now();
+	
+	uint poseId;
 
         // update spots' positions
         for (size_t i = 0; i < detectedMarkers.size(); i++) {
@@ -226,9 +217,11 @@ private:
             // get and update spot from marker
             Vec3d spotPos, spotVar;
             getSpotPos(marker, spotPos, spotVar, ts);
-            Spot * spot = getSpot(marker.id/100);
+	    
+	    poseId = marker.id/100;
+            Spot * spot = getSpot(poseId);
             if (!spot)
-                spot = addSpot(marker.id/100);
+                spot = addSpot(poseId);
 
             // update spot's ot self position
             if (!spot->fixed()) // spot fixes self position after several measurements
@@ -244,7 +237,12 @@ private:
                 // TODO: Angle event
             }
             
-            poses.push_back(spotPos);
+            poseInfo.spottedPose.pose.position.x = spot->pos().x;
+	    poseInfo.spottedPose.pose.position.y = spot->pos().y;
+	    poseInfo.spottedPose.pose.position.z = spot->pos().z;
+	    poseInfo.spottedPose.header.stamp = timeStamp;
+	    poseInfo.id = poseId;
+            posesInfo.poses.push_back(poseInfo);
 
             // draw markers
             detectedMarkers[i].draw(demo, Scalar(0,0,255), 1);
@@ -252,7 +250,7 @@ private:
                 CvDrawingUtils::draw3dAxis(demo, marker, CP);
         }
         
-        publishPoses(poses);
+        poses_pub.publish<navpts::PoseArrayID>(posesInfo);
         
         namedWindow("demo", 0);
         imshow("demo", demo);
@@ -263,14 +261,17 @@ private:
         if (plan.empty())
             plan = Mat(600, 600, CV_8UC3);
 
+	double scale = plan.cols/6.;
+        Matx22d g2i(0, -scale, -scale, 0);
+	Point2d cp(plan.cols/2, plan.rows/2);
+
+	
+	/*
         Pose p = pose(ts);
 
         plan.setTo(Scalar::all(255));
 
-        Point2d cp(plan.cols/2, plan.rows/2);
-        double scale = plan.cols/6.;
-        Matx22d g2i(0, -scale, -scale, 0);
-
+        
         // axes
         line(plan, Point(0, cp.y), Point(plan.cols, cp.y), Scalar::all(200));
         line(plan, Point(cp.x, 0), Point(cp.x, plan.rows), Scalar::all(200));
@@ -279,7 +280,7 @@ private:
         Point2d pos = cp + g2i*p.pos2d();
         line(plan, pos, pos + g2i*p.rot2d()*Point2d(1,0), Scalar(255,0,0));
         circle(plan, pos, 5, Scalar(255,0,0), -1);
-
+*/
         // spots
         for (int i = 0; i < spots.size(); i++)
         {
@@ -293,7 +294,7 @@ private:
             putText(plan, str, sp, FONT_HERSHEY_COMPLEX_SMALL, 1.0, Scalar(0,0,255));
             //cout << "spot: " << spot.pos() << endl;
         }
-
+/*
         // target
         if (targetValid())
         {
@@ -302,7 +303,7 @@ private:
             circle(plan, tp, 5, Scalar(0,0,255), -1);
             putText(plan, "target", tp, FONT_HERSHEY_COMPLEX_SMALL, 1.0, Scalar(0,0,255));
         }
-
+*/
         imshow("plan", plan);
 	waitKey(1);
     }
@@ -452,7 +453,7 @@ public:
     {
       getFlightTask();
       
-      poses_pub = handle.advertise<geometry_msgs::PoseArray>(GET_POSES_INFO_TOPIC, 1);
+      poses_pub = handle.advertise<navpts::PoseArrayID>(GET_POSES_INFO_TOPIC, 1);
       poses_sub = handle.subscribe(SET_POSES_INFO_TOPIC, 1, &NPDrone::updatePoses, this);
     }
 
@@ -463,8 +464,8 @@ public:
         double ts = getTimestamp();
         //cout << pose(ts).rot()*Vec3d(0,0,1) << endl;
         predictSpotsPositions(ts);
-      /*  navigate(ts);
-       showPlan(ts);*/
+      /*  navigate(ts);*/
+       //showPlan(ts);
         checkControl();
     }
 };

@@ -1,14 +1,20 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(navpts)
 
-set(CMAKE_BUILD_TYPE, RelWithDebugInfo)
+set(CMAKE_BUILD_TYPE, Release)
 
-find_package(catkin REQUIRED COMPONENTS roscpp cv_bridge std_msgs image_transport ardrone_autonomy rviz)
+find_package(catkin REQUIRED COMPONENTS roscpp cv_bridge std_msgs image_transport ardrone_autonomy message_generation geometry_msgs)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui calib3d)
 
-catkin_package(INCLUDE_DIRS include)
+include_directories(
+  include ${catkin_INCLUDE_DIRS}
+  CATKIN_DEPENDS message_runtime
+)
 
-include_directories(include ${catkin_INCLUDE_DIRS})
+add_message_files(FILES PoseID.msg PoseArrayID.msg)
+generate_messages(DEPENDENCIES std_msgs geometry_msgs)
+
+catkin_package(INCLUDE_DIRS include)
 
 set(SOURCES src/navpts.cpp 
     src/utils.cpp
@@ -20,9 +26,7 @@ set(SOURCES src/navpts.cpp
 )
 ## Declare a cpp executable
 add_executable(navpts ${SOURCES})
-add_dependencies(navpts ${PROJECT_NAME}_generate_messages_cpp)
+add_dependencies(navpts ${PROJECT_NAME}_gencpp)
 #add_definitions(-std=c++11)
 
 target_link_libraries(navpts ${catkin_LIBRARIES} ${OpenCV_LIBS} -laruco)
-
-
