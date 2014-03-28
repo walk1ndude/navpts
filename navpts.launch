@@ -1,5 +1,5 @@
 <launch>
- <node pkg="navpts" type="navpts" name="navpts" respawn="true" output="screen">
+ <node pkg="navpts_group" type="navpts_group" name="navpts_group" respawn="true" output="screen">
     <rosparam param="flightTask">[1, 4, 5]</rosparam>
     <rosparam param="yawRotateHeight">0.45</rosparam>
     <rosparam param="hitTargetDist">0.15</rosparam>

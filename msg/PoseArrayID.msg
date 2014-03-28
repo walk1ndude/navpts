@@ -1,2 +1,2 @@
 Header header
-navpts/PoseID[] poses
+navpts_group/PoseID[] poses

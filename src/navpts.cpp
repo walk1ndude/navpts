@@ -7,8 +7,8 @@
 
 #include <geometry_msgs/PoseArray.h>
 
-#include <navpts/PoseArrayID.h>
-#include <navpts/PoseID.h>
+#include <navpts_group/PoseArrayID.h>
+#include <navpts_group/PoseID.h>
 
 using namespace cv;
 using namespace aruco;
@@ -168,7 +168,7 @@ private:
         }
     }
     
-    void updatePoses(const navpts::PoseArrayID & posesInfo) {
+    void updatePoses(const navpts_group::PoseArrayID & posesInfo) {
       
     }
 
@@ -176,7 +176,7 @@ private:
     {
         // manage active camera calibration
       
-      ROS_INFO("onImage");
+        ROS_INFO("onImage");
         getCameraCalibration(M, D, R, T, camera);
         CameraParameters CP;
         CP.setParams(Mat(M), Mat(D), image.size());
@@ -199,16 +199,19 @@ private:
             cout << e.what() << endl;
         }
 
-        imshow("bin", MDetector.getThresholdedImage());
+        //imshow("bin", MDetector.getThresholdedImage());
 	
-	std::vector<cv::Vec3d>poses;
-	
-	navpts::PoseArrayID posesInfo;
-	navpts::PoseID poseInfo;
-	
-	ros::Time timeStamp = ros::Time::now();
-	
-	uint poseId;
+        navpts_group::PoseArrayID posesInfo;
+        navpts_group::PoseID poseInfo;
+
+        // add drone info
+        Point3d p = pose(ts).pos();
+        poseInfo.spottedPose.pose.position.x = p.x;
+        poseInfo.spottedPose.pose.position.y = p.y;
+        poseInfo.spottedPose.pose.position.z = p.z;
+        poseInfo.spottedPose.header.stamp = ros::Time().fromSec(ts);
+        poseInfo.id = 1000;
+        posesInfo.poses.push_back(poseInfo);
 
         // update spots' positions
         for (size_t i = 0; i < detectedMarkers.size(); i++) {
@@ -218,7 +221,7 @@ private:
             Vec3d spotPos, spotVar;
             getSpotPos(marker, spotPos, spotVar, ts);
 	    
-	    poseId = marker.id/100;
+            uint poseId = marker.id/100;
             Spot * spot = getSpot(poseId);
             if (!spot)
                 spot = addSpot(poseId);
@@ -237,11 +240,12 @@ private:
                 // TODO: Angle event
             }
             
+            // add marker pose
             poseInfo.spottedPose.pose.position.x = spot->pos().x;
-	    poseInfo.spottedPose.pose.position.y = spot->pos().y;
-	    poseInfo.spottedPose.pose.position.z = spot->pos().z;
-	    poseInfo.spottedPose.header.stamp = timeStamp;
-	    poseInfo.id = poseId;
+            poseInfo.spottedPose.pose.position.y = spot->pos().y;
+            poseInfo.spottedPose.pose.position.z = spot->pos().z;
+            poseInfo.spottedPose.header.stamp = ros::Time().fromSec(ts);
+            poseInfo.id = poseId;
             posesInfo.poses.push_back(poseInfo);
 
             // draw markers
@@ -250,7 +254,7 @@ private:
                 CvDrawingUtils::draw3dAxis(demo, marker, CP);
         }
         
-        poses_pub.publish<navpts::PoseArrayID>(posesInfo);
+        poses_pub.publish<navpts_group::PoseArrayID>(posesInfo);
         
         namedWindow("demo", 0);
         imshow("demo", demo);
@@ -261,9 +265,9 @@ private:
         if (plan.empty())
             plan = Mat(600, 600, CV_8UC3);
 
-	double scale = plan.cols/6.;
+        double scale = plan.cols/6.;
         Matx22d g2i(0, -scale, -scale, 0);
-	Point2d cp(plan.cols/2, plan.rows/2);
+        Point2d cp(plan.cols/2, plan.rows/2);
 
 	
 	/*
@@ -277,10 +281,12 @@ private:
         line(plan, Point(cp.x, 0), Point(cp.x, plan.rows), Scalar::all(200));
 
         // self position
+*/
+        Pose p = pose(ts);
         Point2d pos = cp + g2i*p.pos2d();
         line(plan, pos, pos + g2i*p.rot2d()*Point2d(1,0), Scalar(255,0,0));
         circle(plan, pos, 5, Scalar(255,0,0), -1);
-*/
+
         // spots
         for (int i = 0; i < spots.size(); i++)
         {
@@ -305,7 +311,7 @@ private:
         }
 */
         imshow("plan", plan);
-	waitKey(1);
+        waitKey(1);
     }
 
     void navigate(double ts)
@@ -453,7 +459,7 @@ public:
     {
       getFlightTask();
       
-      poses_pub = handle.advertise<navpts::PoseArrayID>(GET_POSES_INFO_TOPIC, 1);
+      poses_pub = handle.advertise<navpts_group::PoseArrayID>(GET_POSES_INFO_TOPIC, 1);
       poses_sub = handle.subscribe(SET_POSES_INFO_TOPIC, 1, &NPDrone::updatePoses, this);
     }
 
@@ -465,8 +471,8 @@ public:
         //cout << pose(ts).rot()*Vec3d(0,0,1) << endl;
         predictSpotsPositions(ts);
       /*  navigate(ts);*/
-       //showPlan(ts);
-        checkControl();
+        //showPlan(ts);
+        //checkControl();
     }
 };
 

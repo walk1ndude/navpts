@@ -4,9 +4,7 @@
 //#define _BAGPLAY
 
 #include <opencv2/opencv.hpp>
-//#include <set>
 
-#include "birdseye.h"
 #include "PVFilter.h"
 #include <limits>
 

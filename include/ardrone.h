@@ -44,6 +44,7 @@ protected:
     int last_altd = -1;
     int last_altd_seq = -9999;
     
+    double timeCorr = 0;
     std::string vid_topic;
 
     //double must_land;

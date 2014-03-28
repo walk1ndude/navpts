@@ -48,7 +48,7 @@ ArDrone::ArDrone(const string & name)
 
 double ArDrone::getTimestamp() const
 {
-    return ros::Time::now().toSec();
+    return ros::Time::now().toSec() + timeCorr;
 }
 
 double ArDrone::battery()
@@ -148,6 +148,8 @@ void ArDrone::_onCmdVel(const geometry_msgs::TwistStamped &cmd_vel)
 void ArDrone::_onNavdata(const ardrone_autonomy::Navdata & navdata)
 {    
     double ts = navdata.header.stamp.toSec() - 0.02; // 20 ms due to ros
+    if (timeCorr == 0)
+        timeCorr = ts - getTimestamp();
     double dt = ts - last_ts;
 
     // init
